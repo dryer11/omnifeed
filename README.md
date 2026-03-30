@@ -25,8 +25,8 @@ Not another RSS reader. OmniFeed uses **LLM-powered query generation** to discov
 ## Quick Start
 
 ```bash
-# Install
-pip install omnifeed
+# Install from GitHub
+pip install git+https://github.com/dryer11/omnifeed.git
 
 # Interactive setup (recommended)
 omnifeed setup
