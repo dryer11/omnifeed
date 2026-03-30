@@ -26,6 +26,321 @@ def init(path):
 
 
 @main.command()
+def setup():
+    """Interactive setup wizard — configure OmniFeed from scratch."""
+    import webbrowser
+    from .config import DEFAULT_CONFIG_DIR, DEFAULT_CONFIG_FILE
+
+    console.print("\n[bold cyan]🌊 Welcome to OmniFeed![/bold cyan]\n")
+    console.print("This wizard will help you get set up in just a few steps.\n")
+
+    DEFAULT_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+
+    # ── Step 1: About You ──────────────────────────────────────────────────
+    console.print("[bold]Step 1/4 — About You[/bold]")
+
+    name = click.prompt("  Your name", default="", show_default=False)
+    location = click.prompt("  Location (for local content)", default="", show_default=False)
+    identity = click.prompt(
+        "  Identity (e.g. \"AI researcher\", \"student\")", default="", show_default=False
+    )
+    github_user = click.prompt(
+        "  GitHub username (optional, for interest mining)", default="", show_default=False
+    )
+
+    interests_raw = click.prompt(
+        "  Your interests (comma-separated, e.g. AI,Python,research)",
+        default="AI,Technology",
+    )
+    interests_list = [t.strip() for t in interests_raw.split(",") if t.strip()]
+
+    console.print()
+
+    # ── Step 2: Platform Login ─────────────────────────────────────────────
+    console.print("[bold]Step 2/4 — Platform Login[/bold]")
+    console.print()
+    console.print("  Platforms available:")
+    console.print("    [1] Bilibili — 扫码登录 (recommended, mines favorites for interests)")
+    console.print("    [2] GitHub — uses gh CLI or token")
+    console.print("    [3] Reddit — no login needed")
+    console.print("    [4] V2EX — no login needed")
+    console.print("    [5] 小红书 — requires MCP server (advanced)")
+    console.print("    [6] Done")
+    console.print()
+
+    logged_in_platforms: list[str] = []
+    bili_logged_in = False
+    gh_logged_in = False
+
+    while True:
+        choice = click.prompt(
+            "  Login to platform (number, or 6 to skip)", default="6"
+        ).strip()
+
+        if choice == "1":
+            from .login import login_bilibili
+            if login_bilibili():
+                bili_logged_in = True
+                logged_in_platforms.append("bilibili")
+        elif choice == "2":
+            from .login import login_github
+            if login_github():
+                gh_logged_in = True
+                logged_in_platforms.append("github")
+        elif choice in ("3", "4"):
+            platform = "reddit" if choice == "3" else "v2ex"
+            console.print(f"  {platform} will be enabled (no login needed).")
+            logged_in_platforms.append(platform)
+        elif choice == "5":
+            console.print("  小红书 requires a local MCP server.")
+            console.print("  See: scripts/xhs-refresh-login.sh for setup instructions.")
+        elif choice == "6":
+            break
+        else:
+            console.print("  Invalid choice. Enter 1-6.")
+
+        console.print()
+
+    # ── Step 3: AI Engine ──────────────────────────────────────────────────
+    console.print("[bold]Step 3/4 — AI Engine[/bold]")
+    console.print()
+    console.print("  OmniFeed uses an LLM for smarter content discovery.")
+    console.print()
+    console.print("    [1] Anthropic (Claude) — recommended")
+    console.print("    [2] OpenAI compatible")
+    console.print("    [3] Skip (rule-based only)")
+    console.print()
+
+    ai_provider = ""
+    ai_base_url = ""
+    ai_api_key = ""
+    ai_model = ""
+    ai_enabled = False
+
+    ai_choice = click.prompt("  Provider", default="3").strip()
+
+    if ai_choice in ("1", "2"):
+        if ai_choice == "1":
+            ai_provider = "anthropic"
+            ai_base_url = "https://api.anthropic.com"
+            ai_model = "claude-haiku-4-20250514"
+            console.print("  Using Anthropic Claude.")
+        else:
+            ai_provider = "openai"
+            ai_base_url = click.prompt(
+                "  Base URL", default="https://api.openai.com"
+            ).strip()
+            ai_model = click.prompt("  Model name", default="gpt-4o-mini").strip()
+
+        ai_api_key = click.prompt("  API Key", hide_input=True, default="").strip()
+
+        if ai_api_key:
+            console.print("  Verifying API key...", end="")
+            from .login import verify_api_key
+            ok = verify_api_key(ai_provider, ai_base_url, ai_api_key)
+            if ok:
+                console.print(" [green]OK[/green]")
+                ai_enabled = True
+            else:
+                console.print(" [red]FAILED[/red]")
+                console.print("  Continuing without AI (you can add it later in config.yaml).")
+        else:
+            console.print("  No key provided — skipping AI.")
+
+    console.print()
+
+    # ── Step 4: Generate Profile ───────────────────────────────────────────
+    console.print("[bold]Step 4/4 — Generating your profile...[/bold]")
+    console.print()
+
+    # Build channel config
+    default_enabled = {"v2ex", "reddit", "rss"}
+    if bili_logged_in:
+        default_enabled.add("bilibili")
+    if gh_logged_in:
+        default_enabled.add("github")
+    # Always enable weibo for trending
+    default_enabled.add("weibo")
+
+    # Build interests YAML block
+    interest_lines = ""
+    for idx, topic in enumerate(interests_list):
+        weight = 5 if idx == 0 else 3
+        interest_lines += f'    - topic: "{topic}"\n      weight: {weight}\n'
+    if not interest_lines:
+        interest_lines = '    - topic: "Technology"\n      weight: 3\n'
+
+    # Build ai YAML block
+    if ai_enabled and ai_api_key:
+        ai_block = (
+            f"ai:\n"
+            f"  enabled: true\n"
+            f"  model: \"{ai_model}\"\n"
+            f"  base_url: \"{ai_base_url}\"\n"
+            f"  api_key: \"{ai_api_key}\"\n"
+            f"  features: [query_gen, categorize, summarize, recommend_reason]\n"
+            f"  batch_size: 15\n"
+        )
+    else:
+        ai_block = (
+            "ai:\n"
+            "  enabled: false\n"
+            "  # To enable: set enabled: true, add model and api_key\n"
+        )
+
+    # Build channels YAML
+    all_channels = ["weibo", "v2ex", "github", "reddit", "rss", "bilibili", "xhs"]
+    channel_lines = ""
+    for ch in all_channels:
+        enabled_flag = "true" if ch in default_enabled else "false"
+        if ch == "v2ex":
+            channel_lines += f"  {ch}:\n    enabled: {enabled_flag}\n    nodes: [python, ai, jobs]\n"
+        elif ch == "reddit":
+            channel_lines += (
+                f"  {ch}:\n    enabled: {enabled_flag}\n"
+                f"    subreddits: [MachineLearning, LocalLLaMA]\n"
+            )
+        else:
+            channel_lines += f"  {ch}:\n    enabled: {enabled_flag}\n"
+
+    github_user_line = f'  github_user: "{github_user}"' if github_user else ""
+
+    config_yaml = (
+        "# OmniFeed Configuration\n"
+        "# Generated by omnifeed setup\n\n"
+        "profile:\n"
+        f'  name: "{name}"\n'
+        f'  location: "{location}"\n'
+        f'  identity: "{identity}"\n'
+        + (f"{github_user_line}\n" if github_user_line else "")
+        + "\n  interests:\n"
+        + interest_lines
+        + "\n  follows: []\n"
+        + "  feeds: []\n\n"
+        + "channels:\n"
+        + channel_lines
+        + "\noutput:\n"
+        + "  html: true\n"
+        + "  json: true\n"
+        + "  daily_digest: false\n"
+        + '  dir: "~/.omnifeed/output"\n\n'
+        + ai_block
+        + "\nschedule:\n"
+        + '  fetch_interval: "4h"\n'
+        + '  digest_time: "08:00"\n'
+        + '  timezone: "Asia/Shanghai"\n'
+    )
+
+    DEFAULT_CONFIG_FILE.write_text(config_yaml)
+    console.print(f"  Config written to: {DEFAULT_CONFIG_FILE}")
+
+    # Auto-build profile if we have data sources
+    if github_user or bili_logged_in:
+        console.print("  Building interest profile from your data...")
+        try:
+            from .login import auto_build_profile
+            profile = auto_build_profile({"github_user": github_user})
+            top = sorted(profile.get("topics", {}).items(), key=lambda x: x[1], reverse=True)[:5]
+            if top:
+                console.print("  Top interests detected:")
+                for topic, weight in top:
+                    bar = "█" * min(8, int(weight))
+                    console.print(f"    {topic:25s} {bar}")
+        except Exception as e:
+            console.print(f"  [yellow]Profile build skipped:[/yellow] {e}")
+
+    # Offer first fetch
+    console.print()
+    if click.confirm("  Run your first fetch now?", default=True):
+        from .config import load_config
+        from .engine import fetch as run_fetch
+        from .renderer import render_html, render_json
+        import time as _time
+
+        console.print()
+        cfg = load_config()
+        result = run_fetch(cfg)
+
+        output_dir = Path(cfg.output.dir).expanduser()
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        html_path = None
+        if cfg.output.html:
+            html_path = render_html(result, str(output_dir / "index.html"))
+            console.print(f"  HTML: [link=file://{html_path}]{html_path}[/link]")
+
+        if cfg.output.json:
+            json_path = render_json(result, str(output_dir / "feed.json"))
+            console.print(f"  JSON: {json_path}")
+
+        # Auto-open browser
+        if html_path and click.confirm("\n  Open in browser?", default=True):
+            webbrowser.open(f"file://{html_path}")
+
+    console.print()
+    console.print("[bold green]Setup complete![/bold green]")
+    console.print("Run [bold]omnifeed fetch[/bold] any time to refresh your feed.")
+    console.print("Run [bold]omnifeed serve[/bold] to preview in browser.\n")
+
+
+@main.group()
+def login():
+    """Login to content platforms."""
+    pass
+
+
+@login.command(name="bilibili")
+@click.option("--force", is_flag=True, help="Re-login even if already authenticated")
+def login_bilibili_cmd(force):
+    """Login to Bilibili via QR code scan."""
+    from .login import login_bilibili, auto_build_profile
+    success = login_bilibili(force=force)
+    if success:
+        if click.confirm("\nAnalyze Bilibili favorites and update profile?", default=True):
+            try:
+                profile = auto_build_profile({})
+                top = sorted(profile.get("topics", {}).items(), key=lambda x: x[1], reverse=True)[:8]
+                console.print("\nDiscovered interests:")
+                for topic, weight in top:
+                    bar = "█" * min(10, int(weight))
+                    console.print(f"  {topic:25s} {bar} ({weight})")
+            except Exception as e:
+                console.print(f"[yellow]Profile build failed:[/yellow] {e}")
+
+
+@login.command(name="github")
+@click.option("--token", "-t", default=None, help="Personal access token")
+def login_github_cmd(token):
+    """Login to GitHub via gh CLI or personal access token."""
+    from .login import login_github, auto_build_profile
+    success = login_github(token=token)
+    if success:
+        if click.confirm("\nFetch GitHub stars and update profile?", default=True):
+            try:
+                # Try to get username from gh CLI or token
+                import subprocess, httpx
+                username = ""
+                try:
+                    result = subprocess.run(
+                        ["gh", "api", "user", "--jq", ".login"],
+                        capture_output=True, text=True, timeout=10,
+                    )
+                    if result.returncode == 0:
+                        username = result.stdout.strip()
+                except Exception:
+                    pass
+
+                profile = auto_build_profile({"github_user": username})
+                top = sorted(profile.get("topics", {}).items(), key=lambda x: x[1], reverse=True)[:8]
+                console.print("\nDiscovered interests:")
+                for topic, weight in top:
+                    bar = "█" * min(10, int(weight))
+                    console.print(f"  {topic:25s} {bar} ({weight})")
+            except Exception as e:
+                console.print(f"[yellow]Profile build failed:[/yellow] {e}")
+
+
+@main.command()
 @click.option("--github", "-g", default="dryer11", help="GitHub username for stars")
 @click.option("--force", is_flag=True, help="Force re-initialize")
 def profile(github, force):

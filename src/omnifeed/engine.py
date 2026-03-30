@@ -226,11 +226,21 @@ def _fetch_channel(ch_name: str, channel, queries: list[str], config: Config) ->
 def fetch(config: Config, channels: Optional[list[str]] = None, dry_run: bool = False, hops: int = 2) -> FeedResult:
     """
     Multi-hop fetch with mix ratio control.
-    
+
     Hop 1: Profile queries + trending per platform
     Hop 2: Cross-platform topic chasing from hop-1 results
     Final: merge all → dedup → filter → categorize → rank (with diversity)
     """
+    from pathlib import Path
+    profile_path = Path("~/.omnifeed/profile.json").expanduser()
+    if not profile_path.exists() and not dry_run:
+        console.print("  [dim]First run — building your interest profile...[/dim]")
+        try:
+            from .profile import build_deep_profile
+            build_deep_profile()
+        except Exception:
+            pass
+
     tz = timezone(timedelta(hours=8))
     now = datetime.now(tz)
 
