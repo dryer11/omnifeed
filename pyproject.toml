@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "omnifeed"
+version = "0.1.0"
+description = "Cross-platform personalized content aggregator powered by AI agents"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+authors = [
+    {name = "Sun Yan", email = "sy2371443995@gmail.com"},
+]
+keywords = ["feed", "aggregator", "personalization", "ai", "cross-platform"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: End Users/Desktop",
+    "Topic :: Internet :: WWW/HTTP :: Dynamic Content :: News/Diary",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+]
+
+dependencies = [
+    "click>=8.0",
+    "httpx>=0.24",
+    "pyyaml>=6.0",
+    "jinja2>=3.1",
+    "rich>=13.0",
+]
+
+[project.optional-dependencies]
+ai = ["openai>=1.0"]
+all = ["feedparser>=6.0", "openai>=1.0"]
+
+[project.scripts]
+omnifeed = "omnifeed.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/dryer11/omnifeed"
+Repository = "https://github.com/dryer11/omnifeed"
+
+[tool.setuptools.packages.find]
+where = ["src"]
