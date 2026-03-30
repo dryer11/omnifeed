@@ -316,16 +316,30 @@ def fetch(config: Config, channels: Optional[list[str]] = None, dry_run: bool = 
 
     # ── Hop 2: Cross-platform refinement ──
     if hops >= 2 and len(hop1_merged) > 10:
-        hop2_queries = _extract_hop2_queries(hop1_merged, all_queried, max_q=8)
-        if hop2_queries:
-            console.print(f"  [dim]Hop 2: {hop2_queries}[/dim]")
+        # LLM-powered hop-2: reason about what to chase
+        hop2_queries_dict = {}
+        if llm_client and config.ai_enabled:
+            from .llm import generate_hop2_queries
+            hop2_queries_dict = generate_hop2_queries(llm_client, hop1_merged, config)
+
+        # Fallback to rule-based extraction
+        if not hop2_queries_dict:
+            hop2_kw_list = _extract_hop2_queries(hop1_merged, all_queried, max_q=8)
+            if hop2_kw_list:
+                hop2_queries_dict = {ch: hop2_kw_list[:4] for ch in channel_instances if ch not in ("v2ex", "rss", "xhs")}
+
+        if hop2_queries_dict:
+            console.print(f"  [dim]Hop 2[/dim]")
             for ch_name, channel in channel_instances.items():
                 if ch_name in ("v2ex", "rss", "xhs"):
+                    continue
+                ch_hop2_qs = hop2_queries_dict.get(ch_name, [])
+                if not ch_hop2_qs:
                     continue
                 console.print(f"    {channel.icon} {channel.display_name} ", end="")
                 try:
                     h2_items = []
-                    for kw in hop2_queries[:4]:  # 4 queries per channel
+                    for kw in ch_hop2_qs[:4]:
                         results = channel.search(kw, limit=10)
                         for item in results:
                             item.query = f"hop2:{kw}"
@@ -353,12 +367,11 @@ def fetch(config: Config, channels: Optional[list[str]] = None, dry_run: bool = 
     # LLM-powered processing (falls back to rule-based)
     topic_tags = []
     if llm_client and config.ai_enabled:
-        from .llm import (categorize_items, summarize_items, generate_reasons,
+        from .llm import (categorize_items,
                           generate_topic_tags, tag_items_with_topics,
                           cluster_items_llm, report_usage)
         console.print("  [dim]🧠 LLM processing...[/dim]")
         all_items = categorize_items(llm_client, all_items)
-        all_items = summarize_items(llm_client, all_items)
         topic_tags = generate_topic_tags(llm_client, all_items)
         if topic_tags:
             all_items = tag_items_with_topics(llm_client, all_items, topic_tags)
@@ -367,10 +380,9 @@ def fetch(config: Config, channels: Optional[list[str]] = None, dry_run: bool = 
     all_items = categorize_batch(all_items)
     all_items = rank_items(all_items, config.profile)
 
-    # LLM recommendation reasons + clustering (after ranking)
+    # LLM clustering (after ranking)
     clusters = []
     if llm_client and config.ai_enabled:
-        all_items = generate_reasons(llm_client, all_items, config)
         clusters = cluster_items_llm(llm_client, all_items)
         report_usage()
 

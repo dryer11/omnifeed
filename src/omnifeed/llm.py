@@ -146,19 +146,45 @@ def generate_search_queries(client: LLMClient, config: Config) -> Optional[dict[
     if not context:
         return None
 
-    system = """You are OmniFeed's query engine — a creative content discovery AI.
+    system = """You are OmniFeed's discovery engine — a creative content recommender that thinks like a curious human, not a search algorithm.
 
-Your job: generate search queries that will find fascinating content for this specific user.
+YOUR CORE MISSION: Generate search queries that create a DIVERSE, SURPRISING, RICH content diet. Not just what the user explicitly likes — what they'd LOVE but never thought to search for.
 
-RULES:
-1. Don't just rephrase their interests. THINK about what they'd love but haven't searched for.
-2. Mix precise technical queries with exploratory/serendipitous ones.
-3. Consider timing — what's happening this week in their fields?
-4. Each query should be 2-6 words, optimized for the target platform's search.
-5. Include some anti-bubble queries — things outside their comfort zone they might enjoy.
-6. For Chinese platforms (bilibili, xhs): queries in Chinese. Reddit/GitHub: English.
-7. NEVER repeat queries from previous runs (provided below).
-8. Generate 6-10 queries per channel.
+## THINKING STRATEGIES (use ALL of them):
+
+### 1. 心理迁移 (Psychological Transfer)
+Someone who likes AI reasoning → probably fascinated by philosophy of mind, cognitive biases, detective fiction, mathematical beauty
+Someone who likes open source → might enjoy commons economics, Wikipedia culture, DIY maker movement
+"What EMOTIONAL need does this interest serve? What else serves that same need?"
+
+### 2. 兴趣多跳 (Multi-hop Interest Chaining)
+推荐系统 → 信息茧房 → 注意力经济 → 多巴胺机制 → 数字极简主义
+LLM reasoning → 形式逻辑 → 哥德尔不完备定理 → 数学哲学 → 科学史
+"Chain 3-4 hops away from the stated interest. The magic is in hop 3+."
+
+### 3. 画像想象 (Profile Imagination)  
+A grad student in AI in a Chinese city → late nights in the lab, instant noodles, 考研压力, 
+weekend city walks, catching up on films, thinking about career vs academia, 
+wanting both intellectual depth and simple pleasures
+"Imagine their DAILY LIFE, not just their resume. What do they need at 11pm? At Sunday noon?"
+
+### 4. 场景联想 (Scenario Association)
+It's spring → cherry blossoms, outdoor activities, new semester energy, graduation anxiety
+It's Monday evening → winding down, seeking entertainment or inspiration
+"What is this person likely DOING or FEELING right now?"
+
+### 5. 反信息茧房 (Anti-Bubble Injection)
+Every query set MUST include 2-3 queries that are WILDLY different from the user's stated interests.
+A film they wouldn't normally watch. A hobby they've never tried. A perspective from a different field.
+"What would blow their mind if they stumbled upon it?"
+
+## RULES:
+- Each query: 2-8 words, optimized for the target platform
+- Chinese platforms (bilibili, xhs): Chinese queries. Reddit/GitHub: English
+- NEVER repeat queries from previous runs
+- Per channel: 3-4 precise queries + 3-4 exploratory + 2-3 serendipity shots
+- Vary the EMOTIONAL TONE: some intellectual, some fun, some cozy, some provocative
+- For 小红书: think LIFESTYLE, not just the user's research field
 
 Output ONLY valid JSON, no markdown fences."""
 
@@ -318,6 +344,79 @@ def _save_query_history(queries: dict):
     QUERY_HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
     with open(QUERY_HISTORY_FILE, "w") as f:
         json.dump(history, f, ensure_ascii=False, indent=2)
+
+
+# ═══════════════════════════════════════════════════════════════
+# 1b. LLM HOP-2 — intelligent cross-platform topic chasing
+# ═══════════════════════════════════════════════════════════════
+
+def generate_hop2_queries(client: LLMClient, hop1_items: list[FeedItem],
+                          config: Config) -> dict[str, list[str]]:
+    """Analyze Hop-1 results and generate Hop-2 chase queries.
+
+    Instead of extracting high-frequency keywords (dumb), the LLM reasons
+    about what emerging topics, debates, and events deserve cross-platform tracking.
+    """
+    if not client.has_feature("query_gen"):
+        return {}
+
+    # Summarize hop-1 findings for the LLM
+    platform_summaries = {}
+    for item in hop1_items[:80]:
+        pl = item.platform
+        if pl not in platform_summaries:
+            platform_summaries[pl] = []
+        if len(platform_summaries[pl]) < 15:
+            platform_summaries[pl].append(f"[{pl}] {item.title[:60]}")
+
+    summaries_text = "\n".join(
+        f"\n{pl} ({len(items)} items):\n" + "\n".join(items)
+        for pl, items in platform_summaries.items()
+    )
+
+    system = """You are analyzing Hop-1 search results to decide what to chase in Hop-2.
+
+Your job: identify 3-5 EMERGING topics, debates, or events from these results that deserve CROSS-PLATFORM tracking.
+
+Think about:
+- What topic appeared on ONE platform but would have interesting discussions on OTHERS?
+- Is there a breaking event/release/controversy that multiple communities would react to differently?
+- What unexpected connection between items could lead to fascinating content?
+
+For each topic, generate 1-2 search queries per platform (bilibili in Chinese, reddit/github in English).
+
+Output JSON:
+{
+  "bilibili": ["query1", "query2", ...],
+  "github": ["query1", ...],
+  "reddit": ["query1", "query2", ...]
+}
+
+Max 3-4 queries per platform. Quality over quantity. ONLY JSON."""
+
+    result = client._call(
+        model=client.model_batch, system=system,
+        user_msg=f"Hop-1 results:\n{summaries_text}",
+        max_tokens=500, temperature=0.7,
+    )
+
+    if result:
+        try:
+            cleaned = re.sub(r'^```(?:json)?\s*', '', result.strip())
+            cleaned = re.sub(r'\s*```$', '', cleaned)
+            queries = json.loads(cleaned)
+            if isinstance(queries, dict):
+                valid = {}
+                for ch, qs in queries.items():
+                    if isinstance(qs, list):
+                        valid[ch] = [q.strip() for q in qs if isinstance(q, str) and q.strip()][:5]
+                if valid:
+                    total = sum(len(v) for v in valid.values())
+                    console.print(f"  [magenta]🧠 LLM Hop-2: {total} chase queries[/magenta]")
+                    return valid
+        except (json.JSONDecodeError, KeyError):
+            pass
+    return {}
 
 
 # ═══════════════════════════════════════════════════════════════
