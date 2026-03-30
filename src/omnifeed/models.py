@@ -50,6 +50,7 @@ class FeedItem:
     relevance: float = 0.0           # 0-1 relevance to user interests
     cluster_id: str = ""             # Topic cluster ID
     recommend_reason: str = ""       # "因为你关注 AI Safety"
+    topic_tags: list[str] = field(default_factory=list)  # LLM-generated topic tags
     query: str = ""                  # Which query produced this item
     source_type: str = "search"      # "search" | "trending" | "hop2"
 
@@ -123,6 +124,7 @@ class FeedResult:
     stats: dict = field(default_factory=dict)
     items: list[FeedItem] = field(default_factory=list)
     clusters: list[TopicCluster] = field(default_factory=list)
+    topic_tags: list[str] = field(default_factory=list)  # LLM-generated topic tags
 
     def to_json(self, **kwargs) -> str:
         return json.dumps({

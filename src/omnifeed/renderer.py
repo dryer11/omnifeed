@@ -334,8 +334,8 @@ body{
 <div class="section show" id="view-all">
   <div class="pills" id="catPills">
     <div class="pill on" onclick="fc('all',this)">All</div>
-    {% for cat in categories %}
-    <div class="pill" onclick="fc('{{ cat }}',this)">{{ cat }}</div>
+    {% for tag in topic_tags %}
+    <div class="pill" onclick="fc('{{ tag }}',this)">{{ tag }}</div>
     {% endfor %}
   </div>
   <div class="grid" id="allGrid">
@@ -500,9 +500,9 @@ function fp(plat,btn){
   rebuildGrid(plat==='all'?ALL_ITEMS:ALL_ITEMS.filter(i=>i.platform===plat));
   window.scrollTo(0,0);
 }
-function fc(cat,btn){
+function fc(tag,btn){
   QA('#catPills .pill').forEach(b=>b.classList.remove('on'));btn.classList.add('on');
-  rebuildGrid(cat==='all'?ALL_ITEMS:ALL_ITEMS.filter(i=>(i.category||'')===cat));
+  rebuildGrid(tag==='all'?ALL_ITEMS:ALL_ITEMS.filter(i=>(i.topic_tags||[]).includes(tag)));
 }
 function mkCardFull(d){
   const coverUrl=fixCover(d.cover);
@@ -617,6 +617,7 @@ def render_html(result: FeedResult, output_path: str) -> str:
             "engagement": {"likes": item.engagement.likes, "comments": item.engagement.comments, "views": item.engagement.views},
             "recommend_reason": item.recommend_reason or "", "date": date_str,
             "cluster_id": item.cluster_id or "",
+            "topic_tags": item.topic_tags if item.topic_tags else [],
         }
         d["html"] = _make_card_html(d)
         items_data.append(d)
@@ -657,6 +658,7 @@ def render_html(result: FeedResult, output_path: str) -> str:
         plat_labels_json=json.dumps(plat_labels, ensure_ascii=False),
         clusters_json=json.dumps(clusters_json, ensure_ascii=False),
         platforms=platforms,
+        topic_tags=result.topic_tags if result.topic_tags else sorted(seen_categories),
         categories=sorted(seen_categories),
         by_cat=dict(by_cat),
     )

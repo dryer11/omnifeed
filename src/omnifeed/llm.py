@@ -503,6 +503,159 @@ ONLY the JSON array."""
 # ═══════════════════════════════════════════════════════════════
 # USAGE REPORTING
 # ═══════════════════════════════════════════════════════════════
+# 5. DYNAMIC TOPIC TAGS — replace static category pills
+# ═══════════════════════════════════════════════════════════════
+
+def generate_topic_tags(client: LLMClient, items: list[FeedItem]) -> list[str]:
+    """Generate 5-8 dynamic topic tags from current feed content.
+
+    Instead of static categories (Research, Tech, Food...),
+    analyze actual content and produce specific, timely topic labels.
+    Examples: "RLVR突破", "开源工具", "求职面经", "本地探店"
+    """
+    if not client.has_feature("categorize"):
+        return []
+
+    # Send top 50 item titles to LLM
+    sample = items[:50]
+    titles = "\n".join(f"{i+1}. [{it.platform}] {it.title[:60]}" for i, it in enumerate(sample))
+
+    system = """Analyze these content items and generate 5-8 topic tags that best describe the main themes.
+
+Rules:
+- Tags should be SPECIFIC and TIMELY, not generic categories
+- Mix Chinese and English naturally based on content
+- Each tag: 2-6 characters (concise)
+- Good: "LLM推理", "开源工具", "求职秋招", "本地美食"
+- Bad: "Technology", "Research", "Other" (too generic)
+
+Output JSON array of strings: ["tag1", "tag2", ...]
+ONLY the JSON array."""
+
+    result = client._call(
+        model=client.model_batch, system=system,
+        user_msg=titles, max_tokens=200, temperature=0.5,
+    )
+    if result:
+        try:
+            cleaned = re.sub(r'^```(?:json)?\s*', '', result.strip())
+            cleaned = re.sub(r'\s*```$', '', cleaned)
+            tags = json.loads(cleaned)
+            if isinstance(tags, list) and len(tags) >= 2:
+                tags = [t.strip() for t in tags if isinstance(t, str) and t.strip()][:10]
+                console.print(f"  [magenta]🧠 LLM generated {len(tags)} topic tags[/magenta]")
+                return tags
+        except (json.JSONDecodeError, KeyError):
+            pass
+    return []
+
+
+def tag_items_with_topics(client: LLMClient, items: list[FeedItem], topics: list[str]) -> list[FeedItem]:
+    """Assign 1-2 matching topic tags to each item from the generated list."""
+    if not topics or not client.has_feature("categorize"):
+        return items
+
+    batch_size = client.batch_size
+    tagged = 0
+
+    for i in range(0, min(len(items), 100), batch_size):
+        batch = items[i:i + batch_size]
+        items_text = "\n".join(
+            f"{j+1}. [{it.platform}] {it.title[:60]}"
+            for j, it in enumerate(batch)
+        )
+        topic_list = ", ".join(f'"{t}"' for t in topics)
+
+        system = f"""Assign 1-2 topic tags to each item from this list: [{topic_list}]
+
+If no tag fits well, use empty array.
+Output JSON array of arrays: [["tag1"], ["tag1", "tag2"], [], ...]
+Match input order. ONLY the JSON array."""
+
+        result = client._call(
+            model=client.model_batch, system=system,
+            user_msg=items_text, max_tokens=400, temperature=0.1,
+        )
+        if result:
+            try:
+                cleaned = re.sub(r'^```(?:json)?\s*', '', result.strip())
+                cleaned = re.sub(r'\s*```$', '', cleaned)
+                assignments = json.loads(cleaned)
+                if isinstance(assignments, list):
+                    for j, tags in enumerate(assignments):
+                        if j < len(batch) and isinstance(tags, list):
+                            batch[j].topic_tags = [t for t in tags if isinstance(t, str) and t in topics]
+                            if batch[j].topic_tags:
+                                tagged += 1
+            except (json.JSONDecodeError, KeyError):
+                pass
+
+    if tagged:
+        console.print(f"  [magenta]🧠 LLM tagged {tagged} items with topics[/magenta]")
+    return items
+
+
+# ═══════════════════════════════════════════════════════════════
+# 6. LLM CLUSTERING — replace broken Jaccard similarity
+# ═══════════════════════════════════════════════════════════════
+
+def cluster_items_llm(client: LLMClient, items: list[FeedItem]) -> list:
+    """Use LLM to identify topic clusters across items.
+
+    Returns list of dicts: [{"topic": "...", "item_indices": [0, 3, 7]}, ...]
+    """
+    if not client.has_feature("categorize"):
+        return []
+
+    sample = items[:40]
+    titles = "\n".join(f"{i+1}. [{it.platform}] {it.title[:60]}" for i, it in enumerate(sample))
+
+    system = """Identify groups of items that discuss the SAME topic or event.
+Only group items that are clearly about the same thing (not just same category).
+Minimum 2 items per group. Return 0-5 groups.
+
+Output JSON array: [{"topic": "short topic name", "items": [1, 3, 7]}, ...]
+Item numbers are 1-indexed matching input. ONLY the JSON array."""
+
+    result = client._call(
+        model=client.model_batch, system=system,
+        user_msg=titles, max_tokens=400, temperature=0.2,
+    )
+    if result:
+        try:
+            cleaned = re.sub(r'^```(?:json)?\s*', '', result.strip())
+            cleaned = re.sub(r'\s*```$', '', cleaned)
+            groups = json.loads(cleaned)
+            if isinstance(groups, list):
+                from .models import TopicCluster
+                clusters = []
+                for g in groups:
+                    if not isinstance(g, dict):
+                        continue
+                    topic = g.get("topic", "")
+                    indices = g.get("items", [])
+                    if len(indices) < 2 or not topic:
+                        continue
+                    cluster = TopicCluster(cluster_id=f"llm_{len(clusters)}", topic=topic)
+                    for idx in indices:
+                        real_idx = int(idx) - 1
+                        if 0 <= real_idx < len(sample):
+                            cluster.add(sample[real_idx])
+                    if len(cluster.items) >= 2:
+                        for it in cluster.items:
+                            it.cluster_id = cluster.cluster_id
+                        clusters.append(cluster)
+                if clusters:
+                    console.print(f"  [magenta]🧠 LLM found {len(clusters)} topic clusters[/magenta]")
+                return clusters
+        except (json.JSONDecodeError, KeyError, ValueError):
+            pass
+    return []
+
+
+# ═══════════════════════════════════════════════════════════════
+# USAGE REPORTING
+# ═══════════════════════════════════════════════════════════════
 
 def report_usage():
     """Print token usage summary."""

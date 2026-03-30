@@ -351,22 +351,32 @@ def fetch(config: Config, channels: Optional[list[str]] = None, dry_run: bool = 
     all_items = filter_items(all_items, max_age_hours=168)
 
     # LLM-powered processing (falls back to rule-based)
+    topic_tags = []
     if llm_client and config.ai_enabled:
-        from .llm import categorize_items, summarize_items, generate_reasons, report_usage
+        from .llm import (categorize_items, summarize_items, generate_reasons,
+                          generate_topic_tags, tag_items_with_topics,
+                          cluster_items_llm, report_usage)
         console.print("  [dim]🧠 LLM processing...[/dim]")
         all_items = categorize_items(llm_client, all_items)
         all_items = summarize_items(llm_client, all_items)
+        topic_tags = generate_topic_tags(llm_client, all_items)
+        if topic_tags:
+            all_items = tag_items_with_topics(llm_client, all_items, topic_tags)
 
     # Rule-based categorization for anything LLM missed
     all_items = categorize_batch(all_items)
     all_items = rank_items(all_items, config.profile)
 
-    # LLM recommendation reasons (after ranking, for top items)
+    # LLM recommendation reasons + clustering (after ranking)
+    clusters = []
     if llm_client and config.ai_enabled:
         all_items = generate_reasons(llm_client, all_items, config)
+        clusters = cluster_items_llm(llm_client, all_items)
         report_usage()
 
-    clusters = cluster_topics(all_items[:50])
+    # Fallback clustering if LLM didn't produce any
+    if not clusters:
+        clusters = cluster_topics(all_items[:50])
 
     # ── Pool ──
     from .pool import pool_add, prerender_pages
@@ -391,6 +401,7 @@ def fetch(config: Config, channels: Optional[list[str]] = None, dry_run: bool = 
         },
         items=all_items,
         clusters=clusters,
+        topic_tags=topic_tags,
     )
 
     console.print(f"\n  Pool: +{added} new, {n_pages} pages")

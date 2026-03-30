@@ -315,7 +315,7 @@ profile:
   # 关注的人/账号
   follows:
     - platform: xhs
-      user_id: "5905662a50c4b44cd4968643"
+      user_id: "..."
       name: "科大小青椒"
     - platform: twitter
       username: "karpathy"
