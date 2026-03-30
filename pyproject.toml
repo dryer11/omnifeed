@@ -12,7 +12,7 @@ requires-python = ">=3.9"
 authors = [
     {name = "Sun Yan", email = "sy2371443995@gmail.com"},
 ]
-keywords = ["feed", "aggregator", "personalization", "ai", "cross-platform"]
+keywords = ["feed", "aggregator", "personalization", "ai", "cross-platform", "llm", "content-discovery"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: End Users/Desktop",

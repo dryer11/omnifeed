@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Environment
+.venv/
+venv/
+.env
+
+# Secrets & credentials (NEVER commit these)
+.api_key
+*.secret
+bilibili_cookies.json
+github_token.json
+cookies.json
+secrets/
+
+# User data
+output/
+pool/
+logs/
+profile.json
+interactions.json
+query_history.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# UNKNOWN egg-info (build artifact)
+UNKNOWN.egg-info/
