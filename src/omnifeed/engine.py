@@ -235,7 +235,22 @@ def fetch(config: Config, channels: Optional[list[str]] = None, dry_run: bool = 
     now = datetime.now(tz)
 
     enabled = channels or config.enabled_channels()
-    queries = build_smart_queries(config)
+
+    # ── LLM-powered query generation ──
+    llm_client = None
+    llm_queries = None
+    if config.ai_enabled:
+        from .llm import LLMClient, generate_search_queries, reset_usage
+        reset_usage()
+        llm_client = LLMClient(config)
+        console.print("  [dim]🧠 LLM query generation...[/dim]")
+        llm_queries = generate_search_queries(llm_client, config)
+
+    # Use LLM queries if available, fall back to rule-based
+    if llm_queries:
+        queries = llm_queries
+    else:
+        queries = build_smart_queries(config)
 
     if dry_run:
         console.print("\nQuery Plan (dry run)\n")
@@ -324,8 +339,23 @@ def fetch(config: Config, channels: Optional[list[str]] = None, dry_run: bool = 
     # ── Final processing ──
     all_items = dedup(all_items)
     all_items = filter_items(all_items, max_age_hours=168)
+
+    # LLM-powered processing (falls back to rule-based)
+    if llm_client and config.ai_enabled:
+        from .llm import categorize_items, summarize_items, generate_reasons, report_usage
+        console.print("  [dim]🧠 LLM processing...[/dim]")
+        all_items = categorize_items(llm_client, all_items)
+        all_items = summarize_items(llm_client, all_items)
+
+    # Rule-based categorization for anything LLM missed
     all_items = categorize_batch(all_items)
     all_items = rank_items(all_items, config.profile)
+
+    # LLM recommendation reasons (after ranking, for top items)
+    if llm_client and config.ai_enabled:
+        all_items = generate_reasons(llm_client, all_items, config)
+        report_usage()
+
     clusters = cluster_topics(all_items[:50])
 
     # ── Pool ──

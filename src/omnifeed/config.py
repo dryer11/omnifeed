@@ -152,6 +152,7 @@ class Config:
     output: OutputConfig = field(default_factory=OutputConfig)
     ai_enabled: bool = False
     ai_model: str = ""
+    ai_config: dict = field(default_factory=dict)  # Full AI config dict
     config_path: str = ""
 
     def enabled_channels(self) -> list[str]:
@@ -219,6 +220,14 @@ def load_config(path: Optional[str] = None) -> Config:
     ai = raw.get("ai", {})
     cfg.ai_enabled = ai.get("enabled", False)
     cfg.ai_model = ai.get("model", "")
+    cfg.ai_config = {
+        "base_url": ai.get("base_url", ""),
+        "api_key": ai.get("api_key", ""),
+        "models": ai.get("models", {}),
+        "features": ai.get("features", ["query_gen", "categorize", "summarize", "recommend_reason"]),
+        "batch_size": ai.get("batch_size", 15),
+        "max_tokens_per_fetch": ai.get("max_tokens_per_fetch", 50000),
+    }
 
     return cfg
 

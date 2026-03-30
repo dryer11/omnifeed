@@ -38,6 +38,7 @@ HTML_TEMPLATE_STR = r'''<!DOCTYPE html>
 <meta name="theme-color" content="#ffffff">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="referrer" content="no-referrer">
 <link rel="manifest" href="manifest.json">
 <title>OmniFeed</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -131,16 +132,16 @@ body{
 .pill:hover{border-color:rgba(0,0,0,0.15);color:var(--text)}
 .pill.on{background:var(--text);color:#fff;border-color:var(--text)}
 
-/* ── Masonry grid ── */
+/* ── Masonry grid (CSS columns) ── */
 .grid{
-  display:flex;flex-wrap:wrap;gap:16px;
+  columns:3;column-gap:16px;
   padding:12px 20px 40px;
   max-width:1100px;margin:0 auto;
-  align-items:flex-start;
 }
-.grid .card{width:calc(50% - 8px);box-sizing:border-box}
-@media(max-width:640px){.grid{padding:8px 16px 40px}.grid .card{width:100%}}
-@media(min-width:960px){.grid .card{width:calc(33.333% - 11px)}}
+.grid .card{break-inside:avoid;margin-bottom:16px;display:inline-block;width:100%}
+@media(max-width:640px){.grid{columns:1;padding:8px 16px 40px}}
+@media(min-width:641px) and (max-width:959px){.grid{columns:2}}
+@media(min-width:960px){.grid{columns:3}}
 
 /* ── Card ── */
 .card{
@@ -232,6 +233,46 @@ body{
 .section{display:none}
 .section.show{display:block}
 
+/* ── Cluster card ── */
+.cluster{
+  break-inside:avoid;margin-bottom:16px;display:inline-block;width:100%;
+  background:var(--card);
+  border:1px solid var(--border);
+  border-left:3px solid #007aff;
+  border-radius:var(--r);
+  overflow:hidden;
+  box-shadow:var(--shadow);
+  transition:box-shadow 0.3s var(--ease);
+}
+.cluster:hover{box-shadow:var(--shadow-hover)}
+.cluster-head{
+  padding:16px;cursor:pointer;
+  display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+}
+.cluster-head .topic{font-size:15px;font-weight:700;flex:1;min-width:200px;color:var(--text)}
+.cluster-head .badges{display:flex;gap:6px;flex-wrap:wrap}
+.cluster-head .badge{
+  font-size:10px;font-weight:600;
+  padding:2px 8px;border-radius:10px;
+  color:#fff;
+}
+.cluster-head .meta-line{width:100%;font-size:11px;color:var(--text3);margin-top:2px;font-weight:500}
+.cluster-head .arrow{
+  font-size:12px;color:var(--text3);
+  transition:transform 0.3s var(--ease);
+}
+.cluster.open .cluster-head .arrow{transform:rotate(180deg)}
+.cluster-body{
+  max-height:0;overflow:hidden;
+  transition:max-height 0.4s var(--ease);
+}
+.cluster.open .cluster-body{max-height:2000px}
+.cluster-body .card{
+  margin:0 12px 12px;border-radius:12px;
+  box-shadow:none;border:1px solid var(--border);
+}
+.cluster-body .card:first-child{margin-top:0}
+
 /* ── Category header ── */
 .cat-header{
   padding:20px 20px 8px;
@@ -318,6 +359,7 @@ body{
 <script>
 const D=document,Q=s=>D.querySelector(s),QA=s=>D.querySelectorAll(s);
 const ALL_ITEMS={{ items_json }};
+const ALL_CLUSTERS={{ clusters_json }};
 const FK='omnifeed_favs',TK='omnifeed_ix';
 let currentPage=0, totalPages=1;
 
@@ -411,14 +453,43 @@ window.omnifeedExport=function(){
 
 function fmtN(n){n=parseInt(n)||0;return n>=10000?(n/10000).toFixed(1)+'w':n>=1000?(n/1000).toFixed(1)+'k':n}
 
+// ── Cluster rendering ──
+function mkCluster(cl){
+  const items=cl.item_ids.map(id=>ALL_ITEMS.find(i=>i.id===id)).filter(Boolean);
+  if(!items.length)return '';
+  const badges=cl.platforms.map(p=>`<span class="badge" style="background:${PLAT_COLORS[p]||'#999'}">${PLAT_LABELS[p]||p}</span>`).join('');
+  const eng=cl.total_engagement>0?' \u00b7 '+fmtN(cl.total_engagement)+' engagement':'';
+  const cards=items.map(d=>mkCardFull(d)).join('');
+  return '<div class="cluster" data-cid="'+esc(cl.cluster_id)+'">'
+    +'<div class="cluster-head" onclick="this.parentElement.classList.toggle(\'open\')">'
+    +'<div class="topic">'+esc(cl.topic)+'</div>'
+    +'<div class="badges">'+badges+'</div>'
+    +'<span class="arrow">\u25BC</span>'
+    +'<div class="meta-line">'+cl.item_count+' items'+eng+'</div>'
+    +'</div>'
+    +'<div class="cluster-body">'+cards+'</div>'
+    +'</div>';
+}
+
 // ── View switching ──
 function rebuildGrid(items){
   const grid=Q('#allGrid');
-  const frag=document.createDocumentFragment();
-  const tpl=document.createElement('div');
-  items.forEach(d=>{tpl.innerHTML=mkCardFull(d);if(tpl.firstChild)frag.appendChild(tpl.firstChild)});
-  while(grid.firstChild)grid.removeChild(grid.firstChild);
-  grid.appendChild(frag);
+  // Identify clustered items
+  const clusteredIds=new Set();
+  const relevantClusters=[];
+  const itemIds=new Set(items.map(i=>i.id));
+  ALL_CLUSTERS.forEach(cl=>{
+    const inView=cl.item_ids.filter(id=>itemIds.has(id));
+    if(inView.length>=2){
+      inView.forEach(id=>clusteredIds.add(id));
+      relevantClusters.push(Object.assign({},cl,{item_ids:inView,item_count:inView.length}));
+    }
+  });
+  // Render: clusters first, then unclustered items
+  let html='';
+  relevantClusters.forEach(cl=>{html+=mkCluster(cl)});
+  items.filter(d=>!clusteredIds.has(d.id)).forEach(d=>{html+=mkCardFull(d)});
+  grid.innerHTML=html;
   grid.querySelectorAll('.fav').forEach(b=>{if(isFav(b.dataset.id)){b.classList.add('saved');b.textContent='\u2665'}});
 }
 function fp(plat,btn){
@@ -545,6 +616,7 @@ def render_html(result: FeedResult, output_path: str) -> str:
             "tags": item.tags[:5] if item.tags else [],
             "engagement": {"likes": item.engagement.likes, "comments": item.engagement.comments, "views": item.engagement.views},
             "recommend_reason": item.recommend_reason or "", "date": date_str,
+            "cluster_id": item.cluster_id or "",
         }
         d["html"] = _make_card_html(d)
         items_data.append(d)
@@ -560,6 +632,21 @@ def render_html(result: FeedResult, output_path: str) -> str:
     plat_colors = {k: v["color"] for k, v in PLATFORM_META.items()}
     plat_labels = {k: v["label"] for k, v in PLATFORM_META.items()}
 
+    # Build cluster data for template
+    clusters_json = []
+    if result.clusters:
+        for c in result.clusters:
+            cluster_item_ids = [it.id for it in c.items]
+            cluster_platforms = c.platforms
+            clusters_json.append({
+                "cluster_id": c.cluster_id,
+                "topic": c.topic,
+                "platforms": cluster_platforms,
+                "item_count": len(c.items),
+                "total_engagement": int(c.total_engagement),
+                "item_ids": cluster_item_ids,
+            })
+
     html = HTML_TEMPLATE.render(
         stats=result.stats,
         generated_at=result.generated_at,
@@ -568,6 +655,7 @@ def render_html(result: FeedResult, output_path: str) -> str:
         items_json=json.dumps(items_json, ensure_ascii=False),
         plat_colors_json=json.dumps(plat_colors, ensure_ascii=False),
         plat_labels_json=json.dumps(plat_labels, ensure_ascii=False),
+        clusters_json=json.dumps(clusters_json, ensure_ascii=False),
         platforms=platforms,
         categories=sorted(seen_categories),
         by_cat=dict(by_cat),
