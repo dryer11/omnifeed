@@ -10,7 +10,7 @@ readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.9"
 authors = [
-    {name = "Sun Yan", email = "sy2371443995@gmail.com"},
+    {name = "Sun Yan", email = "omnifeed@example.com"},
 ]
 keywords = ["feed", "aggregator", "personalization", "ai", "cross-platform", "llm", "content-discovery"]
 classifiers = [

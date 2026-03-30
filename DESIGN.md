@@ -281,7 +281,7 @@ def score(item: FeedItem, profile: UserProfile) -> float:
 ```json
 {
   "generated_at": "2026-03-28T08:00:00+08:00",
-  "profile": "sunyan@ustc",
+  "profile": "...",
   "stats": { "platforms": 7, "raw_items": 234, "final_items": 15 },
   "items": [ ... ],
   "clusters": [ ... ]
@@ -295,9 +295,9 @@ def score(item: FeedItem, profile: UserProfile) -> float:
 
 # 用户画像
 profile:
-  name: "孙岩"
-  location: "合肥"
-  identity: "USTC AI 方向研究生"
+  name: "Your Name"
+  location: "Your City"
+  identity: "AI researcher / student / developer"
   
   # 兴趣标签（权重 1-5）
   interests:

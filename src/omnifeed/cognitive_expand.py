@@ -95,21 +95,11 @@ COGNITIVE_MAP: dict[str, list[tuple[str, str]]] = {
         ("瑞士军刀 工具", "S"),
     ],
 
-    # ── Campus Life ──
-    "合肥": [
-        ("合肥 隐藏美食", "P"), ("合肥 周末好去处", "P"), ("科大 周边探店", "P"),
-        ("安徽 自驾游", "L"), ("南京 杭州 周末", "L"), ("黄山 旅行攻略", "L"),
-        ("城市漫步 citywalk", "S"), ("深夜食堂", "S"),
-    ],
+    # ── Campus / Academic Life ──
     "研究生": [
         ("研究生 时间管理", "P"), ("科研 论文写作", "P"), ("开题报告 模板", "P"),
         ("读博 还是 工作", "L"), ("学术焦虑 应对", "L"), ("科研人 日常", "L"),
         ("费曼学习法", "S"), ("深度工作 专注力", "S"), ("冥想 减压", "S"),
-    ],
-    "ustc": [
-        ("中科大 最新通知", "P"), ("科大 课程推荐", "P"), ("合肥高新区", "P"),
-        ("C9 高校 动态", "L"), ("中科院 科研", "L"),
-        ("少年班 传奇", "S"),
     ],
 
     # ── Life / Aesthetics / Serendipity ──
@@ -180,11 +170,6 @@ COLLABORATIVE_PROFILES: dict[str, list[str]] = {
         "AI 创业公司", "技术博客 推荐",
         "程序员 摸鱼", "科研 meme", "PhD comics",
         "TED 演讲 技术", "播客 AI相关",
-    ],
-    "USTC学生": [
-        "科大瀚海星云", "合肥 生活指南", "考研 经验",
-        "实习 内推 AI", "秋招 春招 经验",
-        "校园 摄影", "图书馆 自习",
     ],
     "技术宅": [
         "Homelab 折腾", "NAS 搭建", "树莓派 项目",
@@ -296,7 +281,7 @@ def _scenario_expand(seed: str) -> list[str]:
 
 def get_all_expanded_keywords(profile_data: dict) -> list[str]:
     """Get all expanded keywords for query builder.
-    
+
     Called by query_builder to inject cognitive expansions into searches.
     """
     explicit = list(profile_data.get("explicit_interests", {}).keys())
@@ -304,9 +289,9 @@ def get_all_expanded_keywords(profile_data: dict) -> list[str]:
 
     seeds = explicit + behavioral
 
-    # Identity tags from user context (matched via bilibili favorites + user profile)
-    identity_tags = ["AI研究生", "USTC学生", "技术宅", "内容消费者",
-                     "影迷", "足球迷", "视频创作者", "公开课学习者"]
+    # Identity tags from user's identity config (not hardcoded)
+    identity = profile_data.get("identity", "")
+    identity_tags = [t.strip() for t in identity.split(",") if t.strip()] if identity else []
 
     expanded = expand_keywords(seeds, identity_tags, max_per_seed=6)
 

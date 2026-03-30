@@ -46,10 +46,8 @@ EXPANSION_GRAPH = {
     "quantization": ["GPTQ", "AWQ", "GGUF", "4-bit", "8-bit", "TurboQuant"],
     "fine-tune": ["LoRA", "QLoRA", "adapter", "instruction tuning", "SFT"],
 
-    # Life / adjacent
-    "合肥": ["合肥美食", "合肥探店", "合肥周末", "合肥咖啡", "科大周边"],
+    # Life / adjacent (generic)
     "研究生": ["科研方法", "论文写作", "导师关系", "学术会议", "读博vs工作"],
-    "ustc": ["中科大", "科大新闻", "合肥高新区"],
 
     # Cross-domain exploration (anti-bubble)
     "ai": ["AI ethics", "AI regulation", "AI startups", "AI art", "AI music"],
@@ -57,29 +55,7 @@ EXPANSION_GRAPH = {
     "deep-learning": ["neuroscience inspiration", "cognitive science", "brain-computer interface"],
 }
 
-# ── Identity-based inference ──
-# Infer interests from who the user IS, not just what they stated
-IDENTITY_INFERENCES = {
-    "AI方向研究生": [
-        ("论文阅读", 4), ("学术写作", 3), ("实验设计", 3),
-        ("GPU集群", 2), ("数据标注", 2), ("benchmark", 3),
-        ("顶会论文", 4), ("研究方法论", 3),
-    ],
-    "USTC": [
-        ("中科大", 3), ("合肥", 3), ("科大新闻", 2),
-    ],
-    "25级研一": [
-        ("新生指南", 2), ("课程选择", 3), ("研究方向选择", 3),
-        ("开题准备", 2),
-    ],
-    "推荐系统": [
-        ("信息检索", 4), ("用户画像", 3), ("点击率预测", 3),
-        ("特征工程", 2), ("在线学习", 2), ("bandit算法", 3),
-    ],
-}
-
-
-def build_deep_profile(github_user: str = "dryer11", force: bool = False) -> dict:
+def build_deep_profile(github_user: str = "", force: bool = False) -> dict:
     """Build comprehensive multi-layer profile."""
     profile = {
         "initialized": True,
@@ -237,14 +213,15 @@ def _mine_openclaw_deep() -> dict | None:
     workspace = Path("~/.openclaw/workspace").expanduser()
     inferred = {}
 
-    # USER.md — identity-based inference
+    # USER.md — extract any mentioned topics/keywords
     user_md = workspace / "USER.md"
     if user_md.exists():
-        text = user_md.read_text()
-        for trigger, inferences in IDENTITY_INFERENCES.items():
-            if trigger.lower() in text.lower():
-                for topic, weight in inferences:
-                    inferred[topic.lower()] = max(inferred.get(topic.lower(), 0), weight)
+        text = user_md.read_text().lower()
+        # Generic keyword detection from user profile text
+        for kw in ["llm", "ai", "machine learning", "research", "recommendation",
+                   "rag", "agent", "python", "open source", "deep learning"]:
+            if kw in text:
+                inferred[kw] = inferred.get(kw, 0) + 2
 
     # Memory files — extract mentioned projects, tools, topics
     memory_dir = workspace / "memory"

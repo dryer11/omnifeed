@@ -341,7 +341,7 @@ def login_github_cmd(token):
 
 
 @main.command()
-@click.option("--github", "-g", default="dryer11", help="GitHub username for stars")
+@click.option("--github", "-g", default="", help="GitHub username for stars")
 @click.option("--force", is_flag=True, help="Force re-initialize")
 def profile(github, force):
     """Initialize interest profile from platform data (GitHub stars, etc)."""

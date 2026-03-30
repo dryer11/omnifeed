@@ -42,10 +42,12 @@ def build_smart_queries(config: Config) -> dict[str, list[str]]:
     location = config.profile.location or ""
 
     # ── Tier 2: Cognitive expansion ──
+    # Use identity from profile config, not hardcoded
+    identity = config.profile.identity or ""
+    identity_tags = [t.strip() for t in identity.split(",") if t.strip()]
     cog = expand_keywords(
         seed_interests=list(profile_data.get("explicit_interests", {}).keys()),
-        identity_tags=["AI研究生", "USTC学生", "技术宅", "影迷", "足球迷",
-                       "视频创作者", "公开课学习者"],
+        identity_tags=identity_tags,
     )
     cog_precise = cog["precise"]      # Same-domain deep dive
     cog_lateral = cog["lateral"]      # Adjacent domain leaps
